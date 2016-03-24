@@ -18,12 +18,14 @@ namespace PSCap
 { 
     public partial class PSCapMain : Form
     {
+        //states for attaching to the process
         enum DisableProcessSelectionReason
         {
             NoInstances,
             Attached,
         }
 
+        //states for the application in reference to its attachment to the process
         enum UIState
         {
             Detached,
@@ -51,6 +53,12 @@ namespace PSCap
 
         private UIState currentUIState = UIState.Detached;
 
+        /// <summary>
+        ///     Main entry point to the application
+        /// </summary>
+        /// <param name="loggerId">
+        ///     A unique mutex identification number.
+        /// </param>
         public PSCapMain(int loggerId)
         {
             this.loggerId = loggerId;
@@ -61,11 +69,20 @@ namespace PSCap
             splitContainer1.PerformLayout();
         }
 
+        /// <summary>
+        ///     Sets the intial conditions of the application
+        /// </summary>
+        /// <param name="sender">
+        ///     Event source
+        /// </param>
+        /// <param name="e">
+        ///     Details regarding the event
+        /// </param>
         private void Form1_Load(object sender, EventArgs e)
         {
             // set the logger ID
             this.toolStripLoggerID.Text = "Logger ID " + loggerId;
-
+            // start with a log ready to be written
             try
             {
                 Log.logFile = new StreamWriter("PSGameLogger" + loggerId + "_log.txt", false);
@@ -76,7 +93,7 @@ namespace PSCap
             {
                 MessageBox.Show("Failed to create log file: " + ex.Message, "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
-
+            //wire attached process to application's logging routines via callbacks
             scanner.ProcessListUpdate += new EventHandler<Process []>(processList_update);
             captureLogic.AttachedProcessExited += new AttachedProcessExited(attachedProcessExited);
             captureLogic.NewEvent += new NewEventCallback(newUIEvent);
@@ -89,8 +106,18 @@ namespace PSCap
             initListView();
         }
 
+        /// <summary>
+        ///     What happens when the application closes
+        /// </summary>
+        /// <param name="sender">
+        ///     Event source
+        /// </param>
+        /// <param name="e">
+        ///     Details regarding the event
+        /// </param>
         private void Form1_FormClosing(object sender, FormClosingEventArgs e)
         {
+            //stable exit
             if (e.CloseReason == CloseReason.ApplicationExitCall)
                 return;
 
@@ -129,6 +156,16 @@ namespace PSCap
             Log.Info("Form closing");
         }
 
+        /// <summary>
+        ///     Process user input from keyboard
+        /// </summary>
+        /// <param name="msg">
+        ///     dunno
+        /// </param>
+        /// <param name="keyData">
+        ///     Identification of the keypress
+        /// </param>
+        /// <returns></returns>
         protected override bool ProcessCmdKey(ref Message msg, Keys keyData)
         {
             switch(keyData)
@@ -142,6 +179,9 @@ namespace PSCap
             }
         }
 
+        /// <summary>
+        ///     Format the UI of themain list of captured packet events
+        /// </summary>
         private void initListView()
         {
             listView1.VirtualMode = true;
@@ -164,10 +204,24 @@ namespace PSCap
             listView1.SmallImageList = eventImageList;
         }
 
+        /// <summary>
+        ///     Add a record or series of records to the list of captured packet events
+        /// </summary>
+        /// <param name="recs">
+        ///     The new record(s) to be added
+        /// </param>
         private void newRecord(List<GameRecord> recs)
         {
             List<Record> newItems = new List<Record>(recs.Count);
-
+            /*
+            for each individual new gameRec:
+            1. For packets ...
+            1.a. Cast the gameRec into a GameRecordPacket type
+            1.b. Cast the rec into a RecordGame type
+            1.c. Transfer data from the gameRec/GameRecordPacket into the rec/RecordGame
+            1.d. Remove sensitive data from the transferred data
+            2. Do nothing to anything else; note lack of handled format
+            */
             foreach (GameRecord gameRec in recs)
             {
                 Record rec = Record.Factory.Create(RecordType.GAME);
@@ -177,24 +231,8 @@ namespace PSCap
                     case GameRecordType.PACKET:
                         GameRecordPacket record = gameRec as GameRecordPacket;
                         RecordGame gameRecord = rec as RecordGame;
+                        this.sensitiveDataScrubbing(record);
                         gameRecord.setRecord(record);
-
-                        /// XXX: nasty hack to prevent password disclosures
-                        byte [] sensitive = { 0x00, 0x09, 0x00, 0x00, 0x01, 0x03 };
-                        int i = 0;
-
-                        for(i = 0; i < record.packet.Count && i < sensitive.Length; i++)
-                        {
-                            if (record.packet[i] != sensitive[i])
-                                break;
-                        }
-
-                        if(i == sensitive.Length)
-                        {
-                            Log.Info("Found sensitive login packet. Scrubbing from the record");
-                            record.packet.Clear();
-                            record.packet.AddRange(sensitive);
-                        }
                         break;
                     default:
                         Trace.Assert(false, string.Format("NewRecord: Unhandled record type {0}", gameRec.type));
@@ -208,6 +246,34 @@ namespace PSCap
             setRecordCount(captureFile.getNumRecords());
         }
 
+        /// <summary>
+        ///     Nasty hack to prevent password disclosures
+        /// </summary>
+        /// <param name="record">
+        ///     The record that owns the packet being scrubbed
+        /// </param>
+        private void sensitiveDataScrubbing(GameRecordPacket record) {
+            byte[] sensitive = { 0x00, 0x09, 0x00, 0x00, 0x01, 0x03 };
+            int i = 0;
+            List<Byte> packet = record.packet;
+            for(i = 0; i < packet.Count && i < sensitive.Length; i++) {
+                if(packet[i] != sensitive[i])
+                    break;
+            }
+
+            if(i == sensitive.Length) {
+                Log.Info("Found sensitive login packet. Scrubbing from the record");
+                packet.Clear();
+                packet.AddRange(sensitive);
+            }
+        }
+
+        /// <summary>
+        ///     What to do when the process to which this application is attached ends while being attached
+        /// </summary>
+        /// <param name="p">
+        ///     Process that has ended
+        /// </param>
         private void attachedProcessExited(Process p)
         {
             Log.Warning("attached process has exited");
@@ -232,6 +298,12 @@ namespace PSCap
             });*/
         }
 
+        /// <summary>
+        ///     Handle the UI functionality when no further process attachment is possible from our current state
+        /// </summary>
+        /// <param name="reason">
+        ///     The reason the process selection option is being disabled
+        /// </param>
         void disableProcessSelection(DisableProcessSelectionReason reason)
         {
             switch(reason)
@@ -259,6 +331,9 @@ namespace PSCap
             }
         }
 
+        /// <summary>
+        ///     Handle the UI functionality when the application is capable of attaching to a process
+        /// </summary>
         void enableProcessSelection()
         {
             this.SafeInvoke(delegate
@@ -268,6 +343,15 @@ namespace PSCap
             });
         }
 
+        /// <summary>
+        ///     Handle a changing list of available processes to which the application can be attached
+        /// </summary>
+        /// <param name="from">
+        ///     unused
+        /// </param>
+        /// <param name="list">
+        ///     Available processes
+        /// </param>
         private void processList_update(object from, Process[] list)
         {
             this.SafeInvoke(delegate
@@ -297,6 +381,12 @@ namespace PSCap
             });
         }
 
+        /// <summary>
+        ///     Log a message on the status bar
+        /// </summary>
+        /// <param name="status">
+        ///     The message to be logged
+        /// </param>
         private void setStatus(string status)
         {
             this.SafeInvoke(delegate
@@ -305,16 +395,31 @@ namespace PSCap
             });
         }
 
+        /// <summary>
+        ///     Set the total size of the records
+        /// </summary>
+        /// <param name="bytes">
+        ///     The size of the records
+        /// </param>
         private void setRecordSizeEstimate(ulong bytes)
         {
             estimatedCaptureSize = bytes;
         }
 
+        /// <summary>
+        ///     Increment the total size of the records
+        /// </summary>
+        /// <param name="bytes">
+        ///     The size of the records to increment
+        /// </param>
         private void addRecordSizeEstimate(ulong bytes)
         {
             estimatedCaptureSize += bytes;
         }
 
+        /// <summary>
+        ///     Update these features of the GUI as the condition of the capture progresses
+        /// </summary>
         private void updateCaptureFileState()
         {
             this.SafeInvoke(delegate
@@ -361,7 +466,12 @@ namespace PSCap
             });
         }
 
-
+        /// <summary>
+        ///     Load a new capture file (and reset some UI elements)
+        /// </summary>
+        /// <param name="cap">
+        ///     The file object
+        /// </param>
         private void setCaptureFile(CaptureFile cap)
         {
             this.SafeInvoke(delegate
@@ -374,8 +484,6 @@ namespace PSCap
                     // set the estimate before updating the record count
                     setRecordSizeEstimate(0);
                     setRecordCount(0);
-
-                    updateCaptureFileState();
                 }
                 else
                 {
@@ -386,16 +494,21 @@ namespace PSCap
 
                     setRecordSizeEstimate(estimatedSize);
                     setRecordCount(cap.getNumRecords());
-
-                    updateCaptureFileState();
                 }
-                
+                this.updateCaptureFileState();
                 this.displayPacketData(null);
             });
         }
 
+        /// <summary>
+        ///     Set the total count of the records
+        /// </summary>
+        /// <param name="count">
+        ///     The number of records
+        /// </param>
         private void setRecordCount(int count)
         {
+            //the count is not maintained by a basic counter but by the state of Form Controls
             this.SafeInvoke(delegate
             {
                 listView1.SetVirtualListSize(count);
@@ -419,6 +532,12 @@ namespace PSCap
             });
         }
 
+        /// <summary>
+        ///     Display the name of current capture file
+        /// </summary>
+        /// <param name="name">
+        ///     The name
+        /// </param>
         private void setCaptureFileName(string name)
         {
             this.SafeInvoke(delegate
@@ -430,6 +549,12 @@ namespace PSCap
             });
         }
 
+        /// <summary>
+        ///     Initialize the different conditions of the UI
+        /// </summary>
+        /// <param name="state">
+        ///     The state to which the application will transition
+        /// </param>
         void enterUIState(UIState state)
         {
             currentUIState = state;
@@ -528,6 +653,9 @@ namespace PSCap
             }
         }
 
+        /// <summary>
+        ///     Scroll the list of packet items to the last item
+        /// </summary>
         private void scrollToEnd()
         {
             if(listView1.Items.Count > 0)
@@ -536,38 +664,46 @@ namespace PSCap
                     listView1.EnsureVisible(listView1.Items.Count - 1);
                 });
         }
-        
+
+        /// <summary>
+        ///     Parse data to be loaded into the list of captured packets
+        /// </summary>
+        /// <param name="sender">
+        ///     Event source
+        /// </param>
+        /// <param name="e">
+        ///     Details regarding the event
+        /// </param>
         private void listView1_RetrieveVirtualItem(object sender, RetrieveVirtualItemEventArgs e)
         {
             RecordGame i = captureFile.getRecord(e.ItemIndex) as RecordGame;
-
-            string[] row = new string[4];
-
             double time = i.getSecondsSinceStart((uint)captureFile.getStartTime());
 
             GameRecordPacket record = i.Record as GameRecordPacket;
-
-            string bytes = "";
-            bytes = ((PlanetSideMessageType)record.packet[0]).ToString();
-            //foreach (byte b in record.packet)
-            //    bytes += string.Format("{0:X2} ", b);
-
             string eventName = record.packetDestination == GameRecordPacket.PacketDestination.Client ? "Received Packet" : "Sent Packet";
-
-            row[0] = eventName;
-            row[1] = string.Format("{0:0.000000}", time);
-            row[2] = bytes;
-            row[3] = record.packet.Count.ToString();
-
-
+            string bytes = ((PlanetSideMessageType)record.packet[0]).ToString();
+            string[] row = new string[] {
+                eventName,
+                string.Format("{0:0.000000}", time),
+                bytes,
+                record.packet.Count.ToString()
+            };
             e.Item = new ListViewItem(row);
             e.Item.ImageIndex = record.packetDestination == GameRecordPacket.PacketDestination.Server ? 0 : 1;
         }
 
+        /// <summary>
+        ///     Determine whether to follow the last captured packet entry in the list
+        /// </summary>
+        /// <param name="sender">
+        ///     Event source
+        /// </param>
+        /// <param name="e">
+        ///     Details regarding the event
+        /// </param>
         private void listView1_OnScroll(object sender, ScrollEventArgs e)
         {
             int itemHeight;
-            
             if (listView1.VirtualListSize == 0)
                 itemHeight = 0;
             else
@@ -576,15 +712,536 @@ namespace PSCap
             if (itemHeight == 0) // bad!
                 return;
 
-            // mad hax
+            // mad hax: an estimation of how many items should be visible
             int itemsDisplayed = listView1.DisplayRectangle.Height / itemHeight;
-            
-            if (e.NewValue + itemsDisplayed >= listView1.VirtualListSize)
-                followLast = true;
-            else
-                followLast = false;
+            followLast = (e.NewValue + itemsDisplayed) >= listView1.VirtualListSize;
+        }
+        
+        // Start synchronized caret manipulation processing here
+        // Key presses ...
+        //
+        // Record the initial position of a mouse button press or a keyboard key press
+        private int selectionControlStart = -1;
+
+        /// <summary>
+        ///     When the user selects character data in the display, highlight the related hexadecimal data.
+        /// </summary>
+        /// <param name="sender">
+        ///     Event source
+        /// </param>
+        /// <param name="e">
+        ///     Details regarding the event
+        /// </param>
+        private void hexCharDisplay_onKeyPress(object sender, KeyEventArgs e) {
+            TextBox box = (TextBox)sender;
+            bool selection = Control.ModifierKeys == Keys.Shift;
+            int scStart = this.selectionControlStart, boxStart = box.SelectionStart, boxLength = box.SelectionLength;
+            // 1: Do fire if the key was pressed this turn
+            // 2: Don't fire if the caret is already on a previous selection start or previous selction end
+            if((!selection || e.KeyCode == Keys.ShiftKey) &&
+                boxLength > 0 && scStart != boxStart && scStart != boxStart+boxLength) {
+                this.selectionControlStart = boxStart;
+            }
+
+            Tuple<int, int> caretPos = this.displayKeyPressCaretPos(box, e, 18);
+            if(caretPos == null)
+                return; // See default case of displayKeyPressCaretPos(...)
+            int start = caretPos.Item1;
+            int length = caretPos.Item2;
+            bool caretToStart = start != box.SelectionStart;
+            if(!selection) { // We only just moved the caret, we're not selecting any text
+                if(!caretToStart)
+                    start += length;
+                length = 0;
+            }
+            this.hexCharDisplay_onSelectionUpdate(start, start+length, !caretToStart);
+            this.doTextBoxCaretScroll(box, start, length, !caretToStart);
+            e.Handled = true; // Do not propagate
         }
 
+        /// <summary>
+        ///     When the user selects hexadecimal data in the display, highlight the related character data.
+        /// </summary>
+        /// <param name="sender">
+        ///     Event source
+        /// </param>
+        /// <param name="e">
+        ///     Details regarding the event
+        /// </param>
+        private void hexDisplay_onKeyPress(object sender, KeyEventArgs e) {
+            TextBox box = (TextBox)sender;
+            bool selection = Control.ModifierKeys == Keys.Shift;
+            int scStart = this.selectionControlStart, boxStart = box.SelectionStart, boxLength = box.SelectionLength;
+            // 1: Do fire if the key was pressed this turn
+            // 2: Don't fire if the caret is already on a previous selection start or previous selction end
+            if((!selection || e.KeyCode == Keys.ShiftKey) &&
+                boxLength > 0 && scStart != boxStart && scStart != boxStart+boxLength) {
+                this.selectionControlStart = boxStart;
+            }
+
+            Tuple<int, int> caretPos = this.displayKeyPressCaretPos(box, e, 50);
+            if(caretPos == null)
+                return;  // See default case of displayKeyPressCaretPos(...)
+            int start = caretPos.Item1;
+            int length = caretPos.Item2;
+            bool caretToStart = start != box.SelectionStart;
+            if(!selection) { // We only just moved the caret; we're not selecting any text
+                if(!caretToStart)
+                    start += length;
+                length = 0;
+            }
+
+            this.hexDisplay_onSelectionUpdate(start, start+length, !caretToStart);
+            this.doTextBoxCaretScroll(box, start, length, !caretToStart);
+            e.Handled = true; // Do not propagate
+        }
+
+        /// <summary>
+        ///     Calculate the caret position change on the Control due to a key press event.
+        /// </summary>
+        /// <param name="box">
+        ///     Event source as a Textbox Control
+        /// </param>
+        /// <param name="e">
+        ///     Details regarding the key press event
+        /// </param>
+        /// <param name="lineLen">
+        ///     Length of the a single line of text, including he length of the newline string (2)
+        /// </param>
+        /// <returns>
+        ///     A Tuple containing the starting position and length for the selection.
+        /// </returns>
+        private Tuple<int, int> displayKeyPressCaretPos(TextBox box, KeyEventArgs e, int lineLen) {
+            int start = box.SelectionStart;
+            int length = box.SelectionLength;
+            String text = box.Text;
+            char word; //see cases Keys.Right and Keys.Left
+
+            switch(e.KeyCode) {
+                case Keys.Right:
+                    if(start >= this.selectionControlStart) { //s...caret>>
+                        if(start + length < text.Length) {
+                            word = text[start + length];
+                            length = Math.Min(text.Length, length + 1);
+                            if(word == '\r')
+                                length += 2; //newlines are \r\n; if \r, move to first character on next line
+                        } // Return a value because a caret position change was detected
+                    }
+                    else { //caret>>...s
+                        word = box.Text[start];
+                        int diff = start;
+                        start = Math.Min(text.Length, start + 1);
+                        length = Math.Max(0, length - (start - diff));
+                        if(word == '\r') {
+                            start += 2;
+                            length -= 2;
+                        }
+                    }
+                    break;
+                case Keys.Left: //s...<<caret
+                    if(start >= this.selectionControlStart && length > 0) {
+                        word = text[start+length-1];
+                        length = Math.Max(0, length - 1);
+                        if(word == '\n')  //newlines are \r\n; if \n, move to last character on previous line
+                            length -= 2;
+                    }
+                    else { //<<caret...s
+                        if(start - 1 >= 0) {
+                            word = text[start-1];
+                            int diff = start;
+                            start = Math.Max(0, start - 1);
+                            length = Math.Min(text.Length, length + (diff - start));
+                            if(word == '\n') {
+                                start -= 2;
+                                length += 2;
+                            }
+                        } // Return a value because a caret position change was detected
+                    }
+                    break;
+                case Keys.Down:
+                    if(start >= this.selectionControlStart) { //s...caret>>
+                        length = Math.Min(text.Length, length + lineLen);
+                    }
+                    else if(start + lineLen >= this.selectionControlStart) { //[...caret>>...s...
+                        int diff = start;
+                        start = this.selectionControlStart;
+                        length = Math.Max(0, (diff + lineLen) - start);
+                    }
+                    else { //caret>>...]...s
+                        start = Math.Min(text.Length, start + lineLen);
+                        length = Math.Max(0, length - lineLen);
+                    }
+                    break;
+                case Keys.Up:
+                    if(start < this.selectionControlStart) { //<<caret...s
+                        int diff = start;
+                        start = Math.Max(0, start - lineLen);
+                        length = Math.Min(text.Length, length + (diff - start));
+                    }
+                    else if(length - lineLen < 0) { //...s...<<caret...]
+                        start = Math.Max(0, start + (length - lineLen));
+                        length = this.selectionControlStart - start;
+                    }
+                    else { //s...<<caret
+                        length = Math.Max(0, length - lineLen);
+                    }
+                    break;
+                default:
+                    return null; // Not a position manipulation so there is no return
+            }
+            return Tuple.Create(start, length);
+        }
+        //
+        // Mouse controls ...
+        //
+        /// <summary>
+        ///     Consume mouse wheel events without guilt
+        /// </summary>
+        /// <param name="sender">
+        ///     Event source
+        /// </param>
+        /// <param name="e">
+        ///     Details regarding the event
+        /// </param>
+        private void ignoreMouseWheel(object sender, EventArgs e) {
+            HandledMouseEventArgs ee = (HandledMouseEventArgs)e;
+            ee.Handled = true; //om nom
+        }
+
+        /// <summary>
+        ///     Manually toggle the ScrollBar on the Control and manages shared text selection activities
+        /// </summary>
+        /// <param name="sender">
+        ///     Event source
+        /// </param>
+        /// <param name="e">
+        ///     Details regarding the event
+        /// </param>
+        private void hexCharDisplay_TextChanged(object sender, EventArgs e) {
+            TextBox control = (TextBox)sender;
+
+            //scrollbar control
+            int controlHeight = control.Height;
+            int lines = control.Lines.Length;
+            int fontHeight = control.Font.Height;
+            bool hasScrollBars = control.ScrollBars != ScrollBars.None;
+            if(lines * fontHeight > controlHeight && !hasScrollBars) {
+                control.Width += SystemInformation.VerticalScrollBarWidth;
+                control.ScrollBars = ScrollBars.Vertical;
+            }
+            else if(hasScrollBars) {
+                control.Width -= SystemInformation.VerticalScrollBarWidth;
+                control.ScrollBars = ScrollBars.None;
+            }
+        }
+
+        // Leverage which Control has a working MouseMove event
+        private Control selectionControl = null;
+
+        /// <summary>
+        ///     Flag for related data selection activity
+        /// </summary>
+        /// <param name="sender">
+        ///     Event source
+        /// </param>
+        /// <param name="e">
+        ///     Details regarding the event
+        /// </param>
+        private void selection_MouseDown(object sender, EventArgs e) {
+            TextBox control = (TextBox)sender;
+            this.selectionControl = control;
+            this.selectionControlStart = control.SelectionStart;
+        }
+
+        /// <summary>
+        ///     Remove flag for related data selection activity and clear unnecessary selections
+        /// </summary>
+        /// <param name="sender">
+        ///     Event source
+        /// </param>
+        /// <param name="e">
+        ///     Details regarding the event
+        /// </param>
+        private void selection_MouseUp(object sender, EventArgs e) {
+            if(this.selectionControl != null) {
+                if(((TextBox)this.selectionControl).SelectionLength == 0)
+                    this.clearSelectionData();
+                this.selectionControl = null;
+            }
+        }
+
+        /// <summary>
+        ///     Perform checks for validity of onSelection handler.
+        /// </summary>
+        /// <param name="sender">
+        ///     Event source
+        /// </param>
+        /// <param name="e">
+        ///     Details regarding the event
+        /// </param>
+        private void hexCharDisplay_onSelection(object sender, EventArgs e) {
+            TextBox control = (TextBox)sender;
+
+            if(this.selectionControl == control) {
+                int initial = control.SelectionStart;
+                int final = initial + control.SelectionLength;
+                bool alignment = initial >= this.selectionControlStart;
+                this.hexCharDisplay_onSelectionUpdate(initial, final, alignment);
+            }
+        }
+
+        /// <summary>
+        ///     Update the hex line number position and the hexadecimal display position with selection data
+        /// </summary>
+        /// <param name="initial">
+        ///     Where the selection starts in the hexadecimal character display Control
+        /// </param>
+        /// <param name="length">
+        ///     Where the selection ends in the hexadecimal character display Control
+        /// </param>
+        /// <param name="alignment">
+        ///     True, if the text should necessarily show the initial text position; false, if the final position
+        /// </param>
+        private void hexCharDisplay_onSelectionUpdate(int initial, int final, bool alignment) {
+            Tuple<int, int> caretPos;
+
+            // Line numbers control
+            caretPos = this.hexLineNumbersCaretPosition(initial, final);
+            this.doTextBoxCaretScroll(this.hexLineNumbers, caretPos.Item1, caretPos.Item2, alignment);
+            // Hex display control
+            caretPos = this.hexDisplayCaretPosition(initial, final);
+            this.doTextBoxCaretScroll(this.hexDisplay, caretPos.Item1, caretPos.Item2, alignment);
+            // Return caller focus
+            this.hexCharDisplay.Focus();
+        }
+
+        /// <summary>
+        ///     Perform checks for validity of onSelection handler.
+        /// </summary>
+        /// <param name="sender">
+        ///     Event source
+        /// </param>
+        /// <param name="e">
+        ///     Details regarding the event
+        /// </param>
+        private void hexDisplay_onSelection(object sender, EventArgs e) {
+            TextBox control = (TextBox)sender;
+
+            if(this.selectionControl == control) {
+                int initial = control.SelectionStart;
+                int final = initial + control.SelectionLength;
+                bool alignment = initial >= this.selectionControlStart;
+                this.hexDisplay_onSelectionUpdate(initial, final, alignment);
+            }
+        }
+
+        /// <summary>
+        ///     Update the hex line number position and the hexadecimal character position with selection data
+        /// </summary>
+        /// <param name="initial">
+        ///     Where the selection starts in the hexadecimal display Control
+        /// </param>
+        /// <param name="length">
+        ///     Where the selection ends in the hexadecimal display Control
+        /// </param>
+        /// <param name="alignment">
+        ///     True, if the text should necessarily show the initial text position; false, if the final position
+        /// </param>
+        private void hexDisplay_onSelectionUpdate(int initial, int final, bool alignment) {
+            Tuple<int, int> caretPos;
+
+            // Hex char display control
+            caretPos = this.hexCharDisplayCaretPosition(initial, final);
+            this.doTextBoxCaretScroll(this.hexCharDisplay, caretPos.Item1, caretPos.Item2, alignment);
+            // Line numbers control
+            caretPos = this.hexLineNumbersCaretPosition(caretPos.Item1, (caretPos.Item1 + caretPos.Item2));
+            this.doTextBoxCaretScroll(this.hexLineNumbers, caretPos.Item1, caretPos.Item2, alignment);
+            // Return caller focus
+            this.hexDisplay.Focus();
+        }
+
+        /// <summary>
+        ///     Scroll to the most significant caret position during a selection
+        /// </summary>
+        /// <param name="box">
+        ///     The Control being manipulated
+        /// </param>
+        /// <param name="initial">
+        ///     The index where the selection of text begins
+        /// </param>
+        /// <param name="length">
+        ///     The length of the selection of text
+        /// </param>
+        /// <param name="gotoEnd">
+        ///     When true, the Control scrolls to show the selection's initial; when false, the selection's end
+        /// </param>
+        private void doTextBoxCaretScroll(TextBox box, int initial, int length, bool gotoEnd) {
+            box.Focus();
+            box.SelectionStart = initial;
+            if(gotoEnd) { //show end of selection
+                box.SelectionLength = length;
+                box.ScrollToCaret();
+            }
+            else { //show start of selection
+                box.SelectionLength = 0;
+                box.ScrollToCaret();
+                box.SelectionLength = length;
+            }
+        }
+
+        /// <summary>
+        ///     Remove highlighted selected data from the given Controls
+        /// </summary>
+        private void clearSelectionData() {
+            this.hexDisplay.SelectionLength = 0;
+            this.hexCharDisplay.SelectionLength = 0;
+        }
+
+        /*
+        HexLineNumbers
+            XXXXXXXXXrn
+            0         1
+            01234567890
+            XXXXXXXXXrn
+                     2
+            12345678901
+            XXXXXXXXX
+                    3
+            234567890
+        HexDisplay
+            XX XX XX XX XX XX XX XX  XX XX XX XX XX XX XX XXrn
+            0         1         2         3         4
+            01234567890123456789012345678901234567890123456789
+            XX XX XX XX XX XX XX XX  XX XX XX XX XX XX XX XXrn
+            5         6         7         8         9
+            01234567890123456789012345678901234567890123456789
+            XX XX
+            /
+            01234
+        HexCharDisplay
+            XXXXXXXXXXXXXXXXrn
+            0         1
+            012345678901234567
+            XXXXXXXXXXXXXXXXrn
+              2         3
+            890123456789012345
+            XX
+
+            67
+        */
+
+        /// <summary>
+        ///     Calculate the caret position on the line number control using caret on the character display Control.
+        /// </summary>
+        /// <param name="hexCharDisplayInitial">
+        ///     The starting position of the caret in the character Control.
+        /// </param>
+        /// <param name="hexCharDisplayFinal">
+        ///     The final position of the caret in the character display Control.
+        /// </param>
+        /// <returns>
+        ///     A Tuple containing the starting position and length for the line number Control selection.
+        /// </returns>
+        private Tuple<int, int> hexLineNumbersCaretPosition(int hexCharDisplayInitial, int hexCharDisplayFinal) {
+            int initial = hexCharDisplayInitial/18 * 10; // Move after beginning of line
+            int final = hexCharDisplayFinal/18 * 10;
+            int length = final - initial;
+            return Tuple.Create(initial, Math.Max(0, length));
+        }
+
+        /// <summary>
+        ///     Calculate the caret position on the hexadecimal control using caret on the character Control.
+        /// </summary>
+        /// <param name="hexCharDisplayInitial">
+        ///     The starting position of the caret in the character Control.
+        /// </param>
+        /// <param name="hexCharDisplayFinal">
+        ///     The final position of the caret in the character Control.
+        /// </param>
+        /// <returns>
+        ///     A Tuple containing the starting position and length for the hex Control selection.
+        /// </returns>
+        private Tuple<int, int> hexDisplayCaretPosition(int hexCharDisplayInitial, int hexCharDisplayFinal) {
+            int newLine = System.Environment.NewLine.Length;
+            int lines; // Number of lines
+            int elements; // Number of counted values preceding and including
+
+            // Initial
+            lines = hexCharDisplayInitial / 18;
+            elements = hexCharDisplayInitial - lines * newLine;
+            int initial = elements * 3; // Resize: 1-length value -> 2-length value + 1-length non-value
+            initial += lines * 2; // Two extra non-values every line
+            initial += Convert.ToInt32(elements%16 >= 8 || (lines + 1) * 16 == elements); // Extra non-value if last line is more than half-full
+
+            // Length
+            lines = hexCharDisplayFinal / 18;
+            elements = hexCharDisplayFinal - lines * newLine;
+            int length = elements * 3;
+            length += lines * 2;
+            length += Convert.ToInt32(elements%16 > 8 || (lines + 1) * 16 == elements); // Note the conditional
+            length -= 1; // Remove the non-value character at the end of every triple
+            length -= initial; // Difference
+            return Tuple.Create(initial, Math.Max(0, length));
+        }
+
+        /// <summary>
+        ///     Calculate the caret position on the character control using caret on the hexadecimal Control.
+        /// </summary>
+        /// <param name="hexDisplayInitial">
+        ///     The starting position of the caret in the hexadecimal Control.
+        /// </param>
+        /// <param name="hexDisplayFinal">
+        ///     The final position of the caret in the hexadecimal Control.
+        /// </param>
+        /// <returns>
+        ///     A Tuple containing the starting position and length for the hexadecimal Control selection.
+        /// </returns>
+        private Tuple<int, int> hexCharDisplayCaretPosition(int hexDisplayInitial, int hexDisplayFinal) {
+            int newLine = System.Environment.NewLine.Length;
+            int lines; // Number of lines
+            int region; // Index of the triple on which the caret is positioned
+
+            // Initial
+            lines = hexDisplayInitial / 50;
+            int initial = hexDisplayInitial - lines * newLine; // Remove two non-values per line (new lines)
+            initial -= Convert.ToInt32(hexDisplayInitial - lines * 50 >= 24); // Account for extra spacer non-value
+            region = initial%3; // Character of the triple on which the caret is positioned
+            if(region == 1)
+                initial -= 1; // Move to the first position of the triple
+            else if(region == 2)
+                initial += 1; // Move to the next value
+            initial /= 3; // Reduce from three characters per value to one
+            initial += initial/16 * newLine; // Add filler for new lines
+
+            // Length
+            int length = hexDisplayFinal - hexDisplayInitial; // Initial test
+            if(length > 0 && !(region == 2 && length == 1)) { // If region=2 and length=1, no highlight
+                lines = hexDisplayFinal / 50;
+                length = hexDisplayFinal - lines * newLine;
+                length -= Convert.ToInt32(hexDisplayFinal - lines * 50 >= 24);
+                region = length%3;
+                if(region == 1) // Advance to the next value
+                    length += 2;
+                else if(region == 2)
+                    length += 1;
+                length /= 3;
+                length += lines * newLine; // Important: do not add a newline if only at end of a line
+                length -= initial;
+            }
+            else
+                length = 0;
+            return Tuple.Create(initial, Math.Max(0, length));
+        }
+
+        /// <summary>
+        ///     Format and display detailed data of a selected capture entry
+        /// </summary>
+        /// <param name="sender">
+        ///     Event source
+        /// </param>
+        /// <param name="e">
+        ///     Details regarding the event
+        /// </param>
         private void listView1_SelectedIndexChanged(object sender, EventArgs e) {
             /*foreach(var s in listView1.SelectedIndices)
             {
@@ -631,53 +1288,52 @@ namespace PSCap
             }
 
             // "lineNumbers" keeps track of the number of lines in the "formatted" and "converted" data.
-            // "normal" string is a simple spaced display of each byte turned into hex.
+            // "normal" string is a simple spaced display of each byte turned into hexadecimal.
             // "formatted" string is the display form of the "normal" string.  It's mostly the "normal" string.
             // "converted" string is what the byte array looks like when converted to char data.
             StringBuilder lineNumbers = new StringBuilder();
             StringBuilder normal = new StringBuilder();
             StringBuilder formatted = new StringBuilder();
             StringBuilder converted = new StringBuilder();
-            int lineNo = 0;
+            String conversion = "{0:X2}";
 
             // Iterate over packet data bytes.
             List<byte> array = gameRecord.packet;
             string newLine = System.Environment.NewLine;
-            for(int entry = 0, byteIndex = 0, byteLength = array.Count; byteIndex < byteLength; byteIndex++) {
+            for(int entry = 0, byteIndex = 0, byteLength = array.Count, lineNo = 0; byteIndex < byteLength; ) {
                 byte b = array[byteIndex];
-                string decoded = string.Format("{0:X2} ", b);
+                string decoded = string.Format(conversion, b);
+                // See ByteViewer.DrawDump
+                char c = Convert.ToChar(b);
                 normal.Append(decoded);
                 formatted.Append(decoded);
-                // Lifted directly from ByteViewer.DrawDump (source).
-                char c = Convert.ToChar(b);
                 if(CharIsPrintable(c))
                     converted.Append(c);
                 else
                     converted.Append(".");
 
                 entry++;
-                // Once we have displayed sixteen values, start a new line.
-                if(entry == 16) {
-                    formatted.Append(newLine);
-                    converted.Append(newLine);
-                    lineNumbers.Append( (lineNo.ToString().PadLeft(8, '0')) + newLine);
-                    lineNo += 10;
-                    entry = 0;
+                if(++byteIndex < byteLength) { //loop counter increment
+                    if(entry == 16) {
+                        formatted.Append(newLine);
+                        converted.Append(newLine);
+                        lineNumbers.Append((lineNo.ToString().PadLeft(8, '0')) + newLine);
+                        lineNo += 10;
+                        entry = 0;
+                    }
+                    else if(entry == 8)
+                        formatted.Append("  ");
+                    else
+                        formatted.Append(" ");
                 }
-                // An additional space between the first eight values and the latter eight values per line.
-                else if(entry == 8)
-                    formatted.Append(" ");
-                // This is the last line.
-                else if(byteIndex + 1 == byteLength)
-                    lineNumbers.Append( (lineNo.ToString().PadLeft(8, '0')) );
-                
+                else if(byteIndex == byteLength)
+                    lineNumbers.Append((lineNo.ToString().PadLeft(8, '0')));
             }
 
-            // Display resulting data in appropriate fields.
+            // Display resulting data in appropriate fields, and return.
             this.hexLineNumbers.Text = lineNumbers.ToString();
             this.hexDisplay.Text = formatted.ToString();
             this.hexCharDisplay.Text = converted.ToString();
-
             return normal.ToString();
         }
 
@@ -698,11 +1354,29 @@ namespace PSCap
                     (uc == UnicodeCategory.OtherNotAssigned));
         }
 
+        /// <summary>
+        ///     Close this application
+        /// </summary>
+        /// <param name="sender">
+        ///     Event source
+        /// </param>
+        /// <param name="e">
+        ///     Details regarding the event
+        /// </param>
         private void exitToolStripMenuItem_Click(object sender, EventArgs e)
         {
             this.Close();
         }
 
+        /// <summary>
+        ///     Handle what happens when the record/pause button is pressed
+        /// </summary>
+        /// <param name="sender">
+        ///     Event source
+        /// </param>
+        /// <param name="e">
+        ///     Details regarding the event
+        /// </param>
         private void capturePauseButton_Click(object sender, EventArgs e)
         {
             if(captureLogic.isCapturing())
@@ -734,6 +1408,15 @@ namespace PSCap
             }
         }
 
+        /// <summary>
+        ///     Update the state of the UI based on the type of event received
+        /// </summary>
+        /// <param name="evt">
+        ///     The event
+        /// </param>
+        /// <param name="timeout">
+        ///     Whether this event encountered a timeout or occurred because of one
+        /// </param>
         private void newUIEvent(EventNotification evt, bool timeout)
         {
             Log.Info("Got new UIEvent " + evt.ToString());
@@ -776,7 +1459,12 @@ namespace PSCap
             }
         }
 
-        // guard against any strange behavior
+        /// <summary>
+        ///     Guard against any strange behavior based on whether the process exists
+        /// </summary>
+        /// <returns>
+        ///     A perfectly valid response to indicate whether to consider the process is selected
+        /// </returns>
         private bool isProcessSelected()
         {
 #if !WITHOUT_GAME
@@ -788,12 +1476,27 @@ namespace PSCap
 #endif
         }
 
+        /// <summary>
+        ///     Save the capture data to file
+        /// </summary>
+        /// <returns>
+        ///     True, if the capture file was saved; false, otherwise
+        /// </returns>
         private bool saveCaptureFile()
         {
             bool cancelled;
             return saveCaptureFile(out cancelled);
         }
 
+        /// <summary>
+        ///     Save the capture data to file
+        /// </summary>
+        /// <param name="filename">
+        ///     The name of the file to be created/saved
+        /// </param>
+        /// <returns>
+        ///     True, if the capture file was saved; false, otherwise
+        /// </returns>
         private bool doSaveCaptureFile(string filename)
         {
             try
@@ -812,6 +1515,15 @@ namespace PSCap
             }
         }
 
+        /// <summary>
+        ///     Save the capture data to file
+        /// </summary>
+        /// <param name="canceled">
+        ///     Whether the process was canceled
+        /// </param>
+        /// <returns>
+        ///     True, if the capture file was saved; false, otherwise
+        /// </returns>
         private bool saveCaptureFile(out bool canceled)
         {
             Log.Info("Save capture file");
@@ -846,6 +1558,15 @@ namespace PSCap
             return false;
         }
 
+        /// <summary>
+        ///     Handles the logic of pressing on the "Attach" button
+        /// </summary>
+        /// <param name="sender">
+        ///     Event source
+        /// </param>
+        /// <param name="e">
+        ///     Details regarding the event
+        /// </param>
         private async void toolStripAttachButton_Click(object sender, EventArgs e)
         {
             if(captureLogic.isAttached())
@@ -914,6 +1635,15 @@ namespace PSCap
             }
         }
 
+        /// <summary>
+        ///     Handle selecting the menu item to saving the capture data to file
+        /// </summary>
+        /// <param name="sender">
+        ///     Event source
+        /// </param>
+        /// <param name="evt">
+        ///     Details regarding the event
+        /// </param>
         private void saveToolStripMenuItem_Click(object sender, EventArgs evt)
         {
             if (captureFile.isFirstSave())
@@ -922,6 +1652,15 @@ namespace PSCap
                 doSaveCaptureFile(captureFile.getCaptureFilename());
         }
 
+        /// <summary>
+        ///     Handle selecting the menu item that opens an existing capture file
+        /// </summary>
+        /// <param name="sender">
+        ///     Event source
+        /// </param>
+        /// <param name="evt">
+        ///     Details regarding the event
+        /// </param>
         private async void openToolStripMenuItem_Click(object sender, EventArgs evt)
         {
             if (captureFile != null && captureFile.isModified())
@@ -972,11 +1711,29 @@ namespace PSCap
             }
         }
 
+        /// <summary>
+        ///     Handle selecting the menu item to saving the capture data to a new file
+        /// </summary>
+        /// <param name="sender">
+        ///     Event source
+        /// </param>
+        /// <param name="evt">
+        ///     Details regarding the event
+        /// </param>
         private void saveAsToolStripMenuItem_Click(object sender, EventArgs e)
         {
             saveCaptureFile();
         }
 
+        /// <summary>
+        ///     Handle selecting the menu item that opens the About window for application information
+        /// </summary>
+        /// <param name="sender">
+        ///     Event source
+        /// </param>
+        /// <param name="e">
+        ///     Details regarding the event
+        /// </param>
         private void aboutToolStripMenuItem_Click(object sender, EventArgs e)
         {
             //Trace.Assert(false, "test");
@@ -984,6 +1741,18 @@ namespace PSCap
             about.ShowDialog();
         }
 
+        /// <summary>
+        ///     Opens the window for save/file metadata
+        /// </summary>
+        /// <param name="sender">
+        ///     Event source
+        /// </param>
+        /// <param name="e">
+        ///     Details regarding the event
+        /// </param>
+        /// <returns>
+        ///     True, if the window is to be opened; false, if not
+        /// </returns>
         private bool showEditMetadata()
         {
             Trace.Assert(captureFile != null, "Capture file is null");
@@ -1000,15 +1769,33 @@ namespace PSCap
 
                 return true;
             }
-            
+
             return false;
         }
 
+        /// <summary>
+        ///     Handle selecting the menu item that opens the window for save/file metadata
+        /// </summary>
+        /// <param name="sender">
+        ///     Event source
+        /// </param>
+        /// <param name="e">
+        ///     Details regarding the event
+        /// </param>
         private void copyToolStripMenuItem_Click(object sender, EventArgs e)
         {
             showEditMetadata();
         }
 
+        /// <summary>
+        ///     Handle selecting the menu item that displays information about hot keys
+        /// </summary>
+        /// <param name="sender">
+        ///     Event source
+        /// </param>
+        /// <param name="e">
+        ///     Details regarding the event
+        /// </param>
         private void hotkeysToolStripMenuItem_Click(object sender, EventArgs e)
         {
             HotkeysDialog dialog = new HotkeysDialog();

@@ -32,10 +32,10 @@
             System.ComponentModel.ComponentResourceManager resources = new System.ComponentModel.ComponentResourceManager(typeof(PSCapMain));
             this.splitContainer1 = new System.Windows.Forms.SplitContainer();
             this.listView1 = new PSCap.ListViewEx();
-            this.flowLayoutPanel1 = new System.Windows.Forms.FlowLayoutPanel();
+            this.panel1 = new System.Windows.Forms.Panel();
             this.hexLineNumbers = new System.Windows.Forms.TextBox();
             this.hexDisplay = new System.Windows.Forms.TextBox();
-            this.hexCharDisplay = new System.Windows.Forms.TextBox();
+            this.hexCharDisplay = new PSCap.SharedScrollTextBox();
             this.richTextBox1 = new System.Windows.Forms.RichTextBox();
             this.menuStrip1 = new System.Windows.Forms.MenuStrip();
             this.fileToolStripMenuItem = new System.Windows.Forms.ToolStripMenuItem();
@@ -72,7 +72,7 @@
             this.splitContainer1.Panel1.SuspendLayout();
             this.splitContainer1.Panel2.SuspendLayout();
             this.splitContainer1.SuspendLayout();
-            this.flowLayoutPanel1.SuspendLayout();
+            this.panel1.SuspendLayout();
             this.menuStrip1.SuspendLayout();
             this.toolStripContainer1.BottomToolStripPanel.SuspendLayout();
             this.toolStripContainer1.ContentPanel.SuspendLayout();
@@ -94,8 +94,11 @@
             this.splitContainer1.Panel1.Controls.Add(this.listView1);
             // 
             // splitContainer1.Panel2
-            // 
-            this.splitContainer1.Panel2.Controls.Add(this.flowLayoutPanel1);
+            //
+            this.splitContainer1.Panel2.Controls.Add(this.hexLineNumbers);
+            this.splitContainer1.Panel2.Controls.Add(this.hexDisplay);
+            this.splitContainer1.Panel2.Controls.Add(this.hexCharDisplay);
+            this.splitContainer1.Panel2.Controls.Add(this.panel1);
             this.splitContainer1.Panel2.Controls.Add(this.richTextBox1);
             this.splitContainer1.Size = new System.Drawing.Size(771, 291);
             this.splitContainer1.SplitterDistance = 137;
@@ -116,55 +119,66 @@
             this.listView1.RetrieveVirtualItem += new System.Windows.Forms.RetrieveVirtualItemEventHandler(this.listView1_RetrieveVirtualItem);
             this.listView1.SelectedIndexChanged += new System.EventHandler(this.listView1_SelectedIndexChanged);
             // 
-            // flowLayoutPanel1
+            // panel1
             // 
-            this.flowLayoutPanel1.Controls.Add(this.hexLineNumbers);
-            this.flowLayoutPanel1.Controls.Add(this.hexDisplay);
-            this.flowLayoutPanel1.Controls.Add(this.hexCharDisplay);
-            this.flowLayoutPanel1.Dock = System.Windows.Forms.DockStyle.Fill;
-            this.flowLayoutPanel1.Location = new System.Drawing.Point(0, 0);
-            this.flowLayoutPanel1.Name = "flowLayoutPanel1";
-            this.flowLayoutPanel1.Size = new System.Drawing.Size(771, 150);
-            this.flowLayoutPanel1.TabIndex = 1;
+            this.panel1.BorderStyle = System.Windows.Forms.BorderStyle.FixedSingle;
+            this.panel1.BackColor = System.Drawing.Color.Transparent;
+            this.panel1.Dock = System.Windows.Forms.DockStyle.Fill; 
+            this.panel1.Location = new System.Drawing.Point(3, 5);
+            this.panel1.Name = "flowLayoutPanel1";
             // 
             // hexLineNumbers
-            // 
+            //
+            this.hexLineNumbers.Anchor = System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Bottom;
             this.hexLineNumbers.BackColor = System.Drawing.SystemColors.Control;
             this.hexLineNumbers.BorderStyle = System.Windows.Forms.BorderStyle.None;
             this.hexLineNumbers.Enabled = false;
             this.hexLineNumbers.Font = new System.Drawing.Font("Courier New", 9F, System.Drawing.FontStyle.Regular, System.Drawing.GraphicsUnit.Point, ((byte)(0)));
             this.hexLineNumbers.Location = new System.Drawing.Point(3, 5);
-            this.hexLineNumbers.Margin = new System.Windows.Forms.Padding(3, 5, 3, 3);
             this.hexLineNumbers.Multiline = true;
             this.hexLineNumbers.Name = "hexLineNumbers";
-            this.hexLineNumbers.Size = new System.Drawing.Size(67, 129);
+            this.hexLineNumbers.Size = new System.Drawing.Size(67, 130);
             this.hexLineNumbers.TabIndex = 0;
             // 
             // hexDisplay
             // 
+            this.hexDisplay.Anchor = System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Bottom;
             this.hexDisplay.BackColor = System.Drawing.SystemColors.Window;
             this.hexDisplay.BorderStyle = System.Windows.Forms.BorderStyle.FixedSingle;
             this.hexDisplay.Font = new System.Drawing.Font("Courier New", 9F, System.Drawing.FontStyle.Regular, System.Drawing.GraphicsUnit.Point, ((byte)(0)));
-            this.hexDisplay.Location = new System.Drawing.Point(73, 3);
-            this.hexDisplay.Margin = new System.Windows.Forms.Padding(0, 3, 0, 3);
+            this.hexDisplay.HideSelection = false;
+            this.hexDisplay.KeyDown += new System.Windows.Forms.KeyEventHandler(this.hexDisplay_onKeyPress);
+            this.hexDisplay.Location = new System.Drawing.Point(70, 5);
+            this.hexDisplay.MouseDown += new System.Windows.Forms.MouseEventHandler(this.selection_MouseDown);
+            this.hexDisplay.MouseMove += new System.Windows.Forms.MouseEventHandler(this.hexDisplay_onSelection);
+            this.hexDisplay.MouseUp += new System.Windows.Forms.MouseEventHandler(this.selection_MouseUp);
             this.hexDisplay.Multiline = true;
             this.hexDisplay.Name = "hexDisplay";
             this.hexDisplay.ReadOnly = true;
-            this.hexDisplay.Size = new System.Drawing.Size(380, 130);
+            this.hexDisplay.Size = new System.Drawing.Size(402, 130);
             this.hexDisplay.TabIndex = 4;
             // 
             // hexCharDisplay
             // 
+            this.hexCharDisplay.Anchor = System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Bottom;
             this.hexCharDisplay.BackColor = System.Drawing.SystemColors.Window;
             this.hexCharDisplay.BorderStyle = System.Windows.Forms.BorderStyle.FixedSingle;
             this.hexCharDisplay.Font = new System.Drawing.Font("Courier New", 9F, System.Drawing.FontStyle.Regular, System.Drawing.GraphicsUnit.Point, ((byte)(0)));
-            this.hexCharDisplay.Location = new System.Drawing.Point(453, 3);
-            this.hexCharDisplay.Margin = new System.Windows.Forms.Padding(0, 3, 3, 3);
+            this.hexCharDisplay.HideSelection = false;
+            this.hexCharDisplay.KeyDown += new System.Windows.Forms.KeyEventHandler(this.hexCharDisplay_onKeyPress);
+            this.hexCharDisplay.Location = new System.Drawing.Point(471, 5);
+            this.hexCharDisplay.MouseDown += new System.Windows.Forms.MouseEventHandler(this.selection_MouseDown);
+            this.hexCharDisplay.MouseMove += new System.Windows.Forms.MouseEventHandler(this.hexCharDisplay_onSelection);
+            this.hexCharDisplay.MouseUp += new System.Windows.Forms.MouseEventHandler(this.selection_MouseUp);
+            this.hexCharDisplay.MouseWheel += new System.Windows.Forms.MouseEventHandler(this.ignoreMouseWheel);
             this.hexCharDisplay.Multiline = true;
+            this.hexCharDisplay.TextChanged += new System.EventHandler(this.hexCharDisplay_TextChanged);
             this.hexCharDisplay.Name = "hexCharDisplay";
             this.hexCharDisplay.ReadOnly = true;
             this.hexCharDisplay.Size = new System.Drawing.Size(140, 130);
             this.hexCharDisplay.TabIndex = 2;
+            this.hexCharDisplay.linkTextbox(this.hexLineNumbers);
+            this.hexCharDisplay.linkTextbox(this.hexDisplay);
             // 
             // richTextBox1
             // 
@@ -461,8 +475,8 @@
             this.splitContainer1.Panel2.ResumeLayout(false);
             ((System.ComponentModel.ISupportInitialize)(this.splitContainer1)).EndInit();
             this.splitContainer1.ResumeLayout(false);
-            this.flowLayoutPanel1.ResumeLayout(false);
-            this.flowLayoutPanel1.PerformLayout();
+            this.panel1.ResumeLayout(false);
+            this.panel1.PerformLayout();
             this.menuStrip1.ResumeLayout(false);
             this.menuStrip1.PerformLayout();
             this.toolStripContainer1.BottomToolStripPanel.ResumeLayout(false);
@@ -482,7 +496,7 @@
 
         #endregion
         private System.Windows.Forms.SplitContainer splitContainer1;
-        private ListViewEx listView1;
+        private PSCap.ListViewEx listView1;
         private System.Windows.Forms.MenuStrip menuStrip1;
         private System.Windows.Forms.ToolStripMenuItem fileToolStripMenuItem;
         private System.Windows.Forms.ToolStripMenuItem openToolStripMenuItem;
@@ -515,10 +529,10 @@
         private System.Windows.Forms.ToolStripStatusLabel recordCountLabel;
         private System.ComponentModel.BackgroundWorker backgroundWorker1;
         private System.Windows.Forms.ToolStripMenuItem hotkeysToolStripMenuItem;
-        private System.Windows.Forms.FlowLayoutPanel flowLayoutPanel1;
+        private System.Windows.Forms.Panel panel1;
         private System.Windows.Forms.TextBox hexLineNumbers;
-        private System.Windows.Forms.TextBox hexCharDisplay;
         private System.Windows.Forms.TextBox hexDisplay;
+        private PSCap.SharedScrollTextBox hexCharDisplay;
     }
 }
 
